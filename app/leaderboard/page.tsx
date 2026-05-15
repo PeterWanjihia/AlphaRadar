@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import Link from "next/link";
 import WalletSearchInput from "@/components/shared/WalletSearchInput";
 import TokenLogo from "@/components/shared/TokenLogo";
@@ -48,13 +48,70 @@ function formatPnl(value: number) {
 
 export default function LeaderboardPage() {
   const [window, setWindow] = useState("7d");
-  const rows = useMemo(() => rowsByWindow[window] ?? rowsByWindow["7d"], [window]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [snapshot, setSnapshot] = useState<{ generatedAt?: string; walletCount?: number; entries?: any[] } | null>(null);
+
+  const rows = useMemo(() => {
+    if (snapshot && Array.isArray(snapshot.entries) && snapshot.entries.length > 0) {
+      return snapshot.entries.map((e) => ({
+        wallet: e.wallet,
+        pnlUsd: e.pnlUsd ?? 0,
+        roiPercent: e.roiPercent ?? 0,
+        alphaScore: e.alphaScore ?? 0,
+        confidence: e.confidence ?? "low",
+        walletAgeDays: e.walletAgeDays ?? 0,
+        archetype: e.archetype ?? "Unknown",
+        window,
+      }));
+    }
+
+    return rowsByWindow[window] ?? rowsByWindow["7d"];
+  }, [snapshot, window]);
+
+  useEffect(() => {
+    let mounted = true;
+    setLoading(true);
+    setError(null);
+    setSnapshot(null);
+
+    fetch(`/api/leaderboard?window=${encodeURIComponent(window)}&limit=50`)
+      .then(async (res) => {
+        const body = await res.json().catch(() => null);
+        if (!res.ok) {
+          const msg = body?.error?.message ?? body?.message ?? `Request failed: ${res.status}`;
+          throw new Error(msg);
+        }
+
+        if (!body || !body.ok || !body.data) {
+          const msg = body?.error?.message ?? body?.message ?? "Invalid API response";
+          throw new Error(msg);
+        }
+
+        if (!mounted) return;
+        setSnapshot(body.data);
+      })
+      .catch((err: unknown) => {
+        if (!mounted) return;
+        setError(err instanceof Error ? err.message : String(err));
+      })
+      .finally(() => {
+        if (mounted) setLoading(false);
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [window]);
 
   const stats = [
-    { label: "Tracked wallets", value: rows.length.toString() },
-    { label: "Median Alpha Score", value: Math.round(rows.reduce((sum, row) => sum + row.alphaScore, 0) / rows.length).toString() },
-    { label: "Best wallet PNL", value: formatPnl(Math.max(...rows.map((row) => row.pnlUsd))) },
-    { label: "Freshness", value: "Cached snapshot" },
+    { label: "Tracked wallets", value: (snapshot?.walletCount ?? rows.length).toString() },
+    {
+      label: "Median Alpha Score",
+      value: Math.round((snapshot?.entries?.reduce?.((sum: number, r: any) => sum + (r.alphaScore ?? 0), 0) ?? rows.reduce((sum, row) => sum + row.alphaScore, 0)) / (snapshot?.entries?.length ?? rows.length) ).toString(),
+    },
+    { label: "Best wallet PNL", value: formatPnl(Math.max(...(snapshot?.entries?.map((r: any) => r.pnlUsd ?? 0) ?? rows.map((r) => r.pnlUsd)))) },
+    { label: "Freshness", value: snapshot?.generatedAt ? `Generated ${new Date(snapshot.generatedAt).toLocaleString()}` : loading ? "Loading..." : error ? "Error" : "Cached snapshot" },
   ];
 
   return (
@@ -112,6 +169,21 @@ export default function LeaderboardPage() {
           </div>
 
           <div className="overflow-x-auto">
+            {loading && (
+              <div className="px-6 py-8 text-center text-sm text-slate-300">Loading leaderboard snapshot…</div>
+            )}
+
+            {error && (
+              <div className="m-6 rounded-lg border border-rose-500/20 bg-rose-500/6 p-4 text-sm text-rose-200">
+                <div className="font-medium">Failed to load leaderboard</div>
+                <div className="mt-1 text-xs">{error}</div>
+              </div>
+            )}
+
+            {snapshot && Array.isArray(snapshot.entries) && snapshot.entries.length === 0 && (
+              <div className="p-6 text-center text-sm text-slate-300">No leaderboard available for the selected window.</div>
+            )}
+
             <table className="w-full min-w-[880px] table-auto">
               <thead className="text-left text-xs uppercase tracking-[0.2em] text-slate-400">
                 <tr className="border-b border-white/10">
