@@ -94,7 +94,9 @@ export default function LeaderboardPage() {
       setSnapshot(null);
 
       try {
-        const res = await fetch(`/api/leaderboard?window=${encodeURIComponent(window)}&limit=50`);
+         const isFresh = typeof globalThis !== "undefined" && globalThis.location?.search.includes("fresh=true");
+         const freshParam = isFresh ? "&fresh=true" : "";
+        const res = await fetch(`/api/leaderboard?window=${encodeURIComponent(window)}&limit=50${freshParam}`);
         const body = (await res.json().catch(() => null)) as
           | { ok?: boolean; data?: LeaderboardApiSnapshot; error?: { message?: string }; message?: string }
           | null;

@@ -137,7 +137,18 @@ export class BirdeyeClient {
 
   private readonly defaultTimeoutMs = 15_000;
 
-  private readonly requestQueue = getRequestQueue({ concurrency: 2, maxRetries: 3 });
+  /**
+   * Request queue configured for 1 RPS (requests per second) rate limit.
+   * - Concurrency: 1 (only 1 request executes at a time)
+   * - Min interval: 1000ms (ensures max 1 request per second)
+   * - Max retries: 3 (handles transient errors and rate limit recoveries)
+   */
+  private readonly requestQueue = getRequestQueue({
+    concurrency: 1,
+    minRequestIntervalMs: 1000,
+    baseBackoffMs: 1000,
+    maxRetries: 3,
+  });
 
   private readonly cache = getWalletDataCache();
 

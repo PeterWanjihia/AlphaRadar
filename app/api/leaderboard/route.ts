@@ -21,22 +21,26 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     const window = parseTimeWindow(url.searchParams.get("window"), "7d");
     const limit = parseLimit(url.searchParams.get("limit"));
+    const skipCache = url.searchParams.get("fresh") === "true";
 
-    const cached = await getLatestLeaderboardSnapshot(window).catch(() => null);
-    if (cached) {
-      return apiSuccess(
-        {
-          window,
-          limit,
-          generatedAt: cached.generatedAt,
-          walletCount: cached.walletCount,
-          entries: cached.entries.slice(0, limit),
-        },
-        {
-          source: "AlphaTrace-derived",
-          freshness: { leaderboard: "cached" },
-        },
-      );
+    // Check cache first (unless explicitly skipped)
+    if (!skipCache) {
+      const cached = await getLatestLeaderboardSnapshot(window).catch(() => null);
+      if (cached && cached.entries.length > 0) {
+        return apiSuccess(
+          {
+            window,
+            limit,
+            generatedAt: cached.generatedAt,
+            walletCount: cached.walletCount,
+            entries: cached.entries.slice(0, limit),
+          },
+          {
+            source: "AlphaTrace-derived",
+            freshness: { leaderboard: "cached" },
+          },
+        );
+      }
     }
 
     const buildResult = await buildLeaderboardSnapshot(window, limit);
@@ -44,7 +48,12 @@ export async function GET(request: Request) {
 
     if (hadCandidateSourceSuccess && (analyzedCount > 0 || candidateCount === 0)) {
       await saveLeaderboardSnapshot(snapshot).catch((error) => {
-        warnings.push(error instanceof Error ? `Failed to persist leaderboard snapshot: ${error.message}` : "Failed to persist leaderboard snapshot.");
+        const msg = error instanceof Error ? error.message : "Failed to persist leaderboard snapshot.";
+        const isConfigError = msg.includes("not set") || msg.includes("required");
+        const warningMsg = isConfigError ? `Supabase configuration issue: ${msg}` : `Failed to persist to Supabase: ${msg}`;
+        warnings.push(warningMsg);
+        // Log for debugging
+        console.error("[leaderboard] Persistence failed:", warningMsg);
       });
     }
 

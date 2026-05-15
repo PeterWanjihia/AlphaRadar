@@ -1,9 +1,10 @@
 /**
  * Request queue with exponential backoff for handling rate limiting.
- * Serializes requests to avoid overwhelming APIs and handles 429 responses gracefully.
+ * Respects API rate limits by serializing requests with minimum delay between them.
+ * Designed to work with 1 RPS (requests per second) APIs.
  */
 
-type QueuedRequest<T> = {
+type QueuedRequest<T = unknown> = {
   execute: () => Promise<T>;
   resolve: (value: T) => void;
   reject: (error: unknown) => void;
@@ -13,7 +14,16 @@ type QueuedRequest<T> = {
 };
 
 type QueueConfig = {
+  /**
+   * Maximum concurrent requests. Default: 1 (serialized)
+   * For 1 RPS APIs, keep this at 1.
+   */
   concurrency?: number;
+  /**
+   * Minimum milliseconds between requests to enforce rate limit.
+   * Default: 1000ms (1 second for 1 RPS APIs)
+   */
+  minRequestIntervalMs?: number;
   baseBackoffMs?: number;
   maxBackoffMs?: number;
   maxRetries?: number;
@@ -22,11 +32,13 @@ type QueueConfig = {
 export class RequestQueue {
   private static instance: RequestQueue;
 
-  private queue: QueuedRequest<unknown>[] = [];
+  private queue: QueuedRequest[] = [];
 
   private running = 0;
 
   private concurrency: number;
+
+  private minRequestIntervalMs: number;
 
   private baseBackoffMs: number;
 
@@ -34,10 +46,13 @@ export class RequestQueue {
 
   private maxRetries: number;
 
+  private lastRequestTime = 0;
+
   private constructor(config: QueueConfig = {}) {
-    this.concurrency = config.concurrency ?? 2; // Serialize requests by default
-    this.baseBackoffMs = config.baseBackoffMs ?? 1000; // 1 second
-    this.maxBackoffMs = config.maxBackoffMs ?? 32000; // 32 seconds max
+    this.concurrency = config.concurrency ?? 1; // Serialize for rate limiting
+    this.minRequestIntervalMs = config.minRequestIntervalMs ?? 1000; // 1 second for 1 RPS
+    this.baseBackoffMs = config.baseBackoffMs ?? 1000;
+    this.maxBackoffMs = config.maxBackoffMs ?? 32000;
     this.maxRetries = config.maxRetries ?? 3;
   }
 
@@ -64,22 +79,33 @@ export class RequestQueue {
         backoffMs: this.baseBackoffMs,
       };
 
-      this.queue.push(request);
+      this.queue.push(request as QueuedRequest);
       this.process();
     });
   }
 
   private process() {
     while (this.running < this.concurrency && this.queue.length > 0) {
+      const now = Date.now();
+      const timeSinceLastRequest = now - this.lastRequestTime;
+      const delayNeeded = Math.max(0, this.minRequestIntervalMs - timeSinceLastRequest);
+
+      if (delayNeeded > 0) {
+        // Wait for rate limit to allow next request
+        setTimeout(() => this.process(), delayNeeded);
+        break;
+      }
+
       const request = this.queue.shift();
       if (request) {
         this.running++;
+        this.lastRequestTime = Date.now();
         this.executeRequest(request);
       }
     }
   }
 
-  private async executeRequest<T>(request: QueuedRequest<T>): Promise<void> {
+  private async executeRequest(request: QueuedRequest): Promise<void> {
     try {
       const result = await request.execute();
       request.resolve(result);
@@ -96,7 +122,9 @@ export class RequestQueue {
           this.maxBackoffMs
         );
 
-        console.warn(`[RequestQueue] Rate limited, retrying in ${backoff}ms (attempt ${request.attempt}/${request.maxRetries})`);
+        console.warn(
+          `[RequestQueue] Rate limited (429), retrying in ${backoff}ms (attempt ${request.attempt}/${request.maxRetries})`
+        );
 
         // Put back in queue with delay
         setTimeout(() => {
@@ -139,6 +167,7 @@ export class RequestQueue {
       queuedRequests: this.queue.length,
       runningRequests: this.running,
       maxConcurrency: this.concurrency,
+      minRequestIntervalMs: this.minRequestIntervalMs,
     };
   }
 
@@ -148,6 +177,7 @@ export class RequestQueue {
   reset() {
     this.queue = [];
     this.running = 0;
+    this.lastRequestTime = 0;
   }
 }
 

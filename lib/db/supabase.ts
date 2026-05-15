@@ -31,8 +31,8 @@ function buildUrl(path: string, params?: Record<string, string | number | boolea
 
 async function supabaseFetch(path: string, options: SupabaseFetchOptions = {}) {
   const env = getSupabaseEnv();
-  if (!env.url) throw new Error("SUPABASE_URL required");
-  if (!env.serviceRole) throw new Error("SUPABASE_SERVICE_ROLE_KEY required for server-side requests");
+  if (!env.url) throw new Error("SUPABASE_URL not set (env: SUPABASE_URL or NEXT_PUBLIC_SUPABASE_URL)");
+  if (!env.serviceRole) throw new Error("SUPABASE_SERVICE_ROLE_KEY not set - leaderboard persistence unavailable");
 
   const url = buildUrl(path, options.params);
 
@@ -60,12 +60,13 @@ async function supabaseFetch(path: string, options: SupabaseFetchOptions = {}) {
   }
 
   if (!res.ok) {
+    const errorDetail = typeof json === "object" && json !== null && "message" in json ? (json as { message?: string }).message : String(json);
     const err = {
       status: res.status,
       statusText: res.statusText,
       body: json,
     };
-    throw Object.assign(new Error("Supabase request failed"), err);
+    throw Object.assign(new Error(`Supabase request failed (${res.status}): ${errorDetail}`), err);
   }
 
   return json;
