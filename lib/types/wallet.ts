@@ -7,6 +7,7 @@ import type {
   BirdeyeWalletPnlSummary,
   TimeWindow,
 } from "@/lib/birdeye/types";
+import type { AlphaScore } from "@/lib/types/scoring";
 
 export type WalletProfile = {
   wallet: string;
@@ -18,13 +19,7 @@ export type WalletProfile = {
   firstFunded: BirdeyeWalletFirstFunded | null;
   tokenMetadata: BirdeyeTokenMetadata[];
   generatedAt: string;
-  alphaScore?: {
-    score: number;
-    breakdown: Record<string, number>;
-    confidence: "high" | "medium" | "low";
-    archetype: string;
-    flags: string[];
-  } | null;
+  alphaScore: AlphaScore | null;
 };
 
 export type WalletProfileResult = {

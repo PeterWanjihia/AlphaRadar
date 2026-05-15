@@ -6,6 +6,9 @@ import SummaryCards from "@/components/wallet/SummaryCards";
 import TokenPnlTable from "@/components/wallet/TokenPnlTable";
 import NetWorthChart from "@/components/wallet/NetWorthChart";
 import HoldingsTable from "@/components/wallet/HoldingsTable";
+import ArchetypePanel from "@/components/wallet/ArchetypePanel";
+import ConfidenceDetails from "@/components/wallet/ConfidenceDetails";
+import AlphaScoreBreakdown from "@/components/wallet/AlphaScoreBreakdown";
 
 export default function WalletProfilePage({ params }: { params: { address: string } }) {
   const address = params.address;
@@ -77,6 +80,20 @@ export default function WalletProfilePage({ params }: { params: { address: strin
           ) : profile ? (
             <div className="grid gap-6">
               <SummaryCards summary={profile.summary} alphaScore={profile.alphaScore} />
+
+              {profile.alphaScore && (
+                <div className="grid gap-6">
+                  <div className="grid gap-4 lg:grid-cols-2">
+                    <ArchetypePanel
+                      archetype={profile.alphaScore.archetype}
+                      explanation={profile.alphaScore.archetypeExplanation}
+                    />
+                    <ConfidenceDetails breakdown={profile.alphaScore.confidenceBreakdown} />
+                  </div>
+
+                  <AlphaScoreBreakdown breakdown={profile.alphaScore.breakdown} />
+                </div>
+              )}
 
               <div className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
                 <div className="rounded-[1.75rem] border border-white/10 bg-[#08111f] p-5">

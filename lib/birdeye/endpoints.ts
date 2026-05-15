@@ -5,4 +5,5 @@ export const BIRDEYE_ENDPOINTS = {
   walletTokenList: "/v1/wallet/token_list",
   walletFirstFunded: "/wallet/v2/tx/first-funded",
   tokenMetadataMultiple: "/defi/v3/token/meta-data/multiple",
+  traderGainersLosers: "/trader/gainers-losers",
 } as const;

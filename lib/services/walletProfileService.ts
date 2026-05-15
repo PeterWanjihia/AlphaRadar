@@ -1,7 +1,8 @@
 import { BirdeyeClient, BirdeyeClientError } from "@/lib/birdeye/client";
 import type { TimeWindow } from "@/lib/birdeye/types";
 import type { WalletProfile, WalletProfileResult } from "@/lib/types/wallet";
-import { computeAlphaScore, type InputModel } from "@/lib/scoring/walletAlphaScore";
+import { computeAlphaScore } from "@/lib/scoring/walletAlphaScore";
+import type { WalletScoringInput } from "@/lib/types/scoring";
 import { getFreshSnapshot, getLatestSnapshot, saveSnapshot } from "@/lib/repositories/walletProfileRepository";
 import type { FreshnessState } from "@/lib/types/api";
 
@@ -148,20 +149,27 @@ export class WalletProfileService {
     const tokenCount = Math.max(1, new Set([...pnlDetails.map((r) => r.tokenAddress), ...currentHoldings.map((h) => h.tokenAddress)]).size);
     const combinedVolumeUsd = summary?.volumeUsd ?? pnlDetails.reduce((s, r) => s + (r.volumeUsd ?? 0), 0) ?? null;
 
-    const scoreInput = {
-      realizedPnlUsd,
-      roiPercent,
-      winRate,
-      tradeCount,
-      walletAgeDays,
-      recentActivityDaysAgo,
-      tokenCount,
-      combinedVolumeUsd,
+    const scoreInput: WalletScoringInput = {
+      pnlUsd: realizedPnlUsd,
+      roiPercent: roiPercent,
+      winRate: winRate,
+      tradeCount: tradeCount,
+      tokenCount: tokenCount,
+      volumes: pnlDetails.map((r) => r.volumeUsd ?? 0),
+      walletAgeDays: walletAgeDays,
+      daysSinceLastActivity: recentActivityDaysAgo,
+      dataQuality: {
+        hasPnl: summary?.pnlUsd !== null && summary?.pnlUsd !== undefined,
+        hasRoi: summary?.roiPercent !== null && summary?.roiPercent !== undefined,
+        hasWinRate: summary?.winRate !== null && summary?.winRate !== undefined,
+        hasNetWorth: netWorthSeries.length > 0,
+        hasHoldings: currentHoldings.length > 0,
+      },
     };
 
     let alphaScore = null;
     try {
-      alphaScore = computeAlphaScore(scoreInput as InputModel);
+      alphaScore = computeAlphaScore(scoreInput);
     } catch (error) {
       warnings.push(this.toWarning("Alpha score computation failed", error));
       alphaScore = null;

@@ -1,4 +1,5 @@
 import type { WalletProfile } from "@/lib/types/wallet";
+import type { AlphaScore } from "@/lib/types/scoring";
 import { insertIntoTable, selectFromTable } from "@/lib/db/supabase";
 import type { TimeWindow } from "@/lib/birdeye/types";
 import { CACHE_TTL_MS, isCacheFresh } from "@/lib/cache/ttl";
@@ -14,6 +15,7 @@ type WalletProfileSnapshotRow = {
   net_worth_json: WalletProfile["netWorthSeries"];
   first_funded_json: WalletProfile["firstFunded"];
   token_metadata_json: WalletProfile["tokenMetadata"];
+  alpha_score_json: AlphaScore | null;
   generated_at: string;
 };
 
@@ -28,6 +30,7 @@ function toWalletProfile(row: WalletProfileSnapshotRow): WalletProfile {
     firstFunded: row.first_funded_json,
     tokenMetadata: row.token_metadata_json ?? [],
     generatedAt: row.generated_at,
+    alphaScore: row.alpha_score_json ?? null,
   };
 }
 
@@ -41,6 +44,7 @@ export async function saveSnapshot(profile: WalletProfile) {
     net_worth_json: profile.netWorthSeries,
     first_funded_json: profile.firstFunded,
     token_metadata_json: profile.tokenMetadata,
+    alpha_score_json: profile.alphaScore,
     generated_at: profile.generatedAt,
   };
 

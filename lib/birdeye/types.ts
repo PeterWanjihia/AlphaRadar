@@ -48,3 +48,15 @@ export type BirdeyeWalletFirstFunded = {
   firstFundedAt: string | null;
   walletAgeDays: number | null;
 };
+
+export type BirdeyeTraderGainersLoserRow = {
+  wallet: string;
+  rank: number | null;
+  pnlUsd: number | null;
+  roiPercent: number | null;
+  winRate: number | null;
+  tradeCount: number | null;
+  tokenCount: number | null;
+  volumeUsd: number | null;
+  lastActivityAt: string | null;
+};

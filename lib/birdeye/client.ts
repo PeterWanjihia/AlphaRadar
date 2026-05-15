@@ -2,6 +2,7 @@ import { getEnv } from "@/lib/config/env";
 import { BIRDEYE_ENDPOINTS } from "@/lib/birdeye/endpoints";
 import type {
   BirdeyeTokenMetadata,
+  BirdeyeTraderGainersLoserRow,
   BirdeyeWalletFirstFunded,
   BirdeyeWalletHolding,
   BirdeyeWalletNetWorthPoint,
@@ -72,6 +73,10 @@ function asArray<T>(value: T[] | undefined | null): T[] {
   return Array.isArray(value) ? value : [];
 }
 
+function extractRows(raw: Record<string, unknown>): unknown[] {
+  return asArray((raw.items as unknown[]) ?? (raw.tokens as unknown[]) ?? (raw.list as unknown[]) ?? (raw.rows as unknown[]) ?? (raw.data as unknown[]));
+}
+
 function inferWalletPnlSummary(raw: Record<string, unknown>, wallet: string, window: TimeWindow): BirdeyeWalletPnlSummary {
   return {
     wallet,
@@ -81,6 +86,22 @@ function inferWalletPnlSummary(raw: Record<string, unknown>, wallet: string, win
     winRate: toNumber(raw.win_rate ?? raw.winRate),
     tradeCount: toNumber(raw.total_trades ?? raw.trade_count ?? raw.tradeCount),
     volumeUsd: toNumber(raw.volume_usd ?? raw.total_volume_usd ?? raw.volume),
+  };
+}
+
+function inferTraderGainersLoserRow(row: unknown): BirdeyeTraderGainersLoserRow {
+  const record = (row ?? {}) as Record<string, unknown>;
+
+  return {
+    wallet: toStringOrNull(record.wallet ?? record.address ?? record.wallet_address) ?? "unknown",
+    rank: toNumber(record.rank ?? record.position),
+    pnlUsd: toNumber(record.pnl_usd ?? record.profit_usd ?? record.pnl ?? record.profit),
+    roiPercent: toNumber(record.roi ?? record.roi_percent),
+    winRate: toNumber(record.win_rate ?? record.winRate),
+    tradeCount: toNumber(record.trade_count ?? record.total_trades ?? record.trades),
+    tokenCount: toNumber(record.token_count ?? record.tokens_traded ?? record.unique_tokens),
+    volumeUsd: toNumber(record.volume_usd ?? record.total_volume_usd ?? record.volume),
+    lastActivityAt: toIsoStringOrNull(record.last_trade_at ?? record.last_activity_at ?? record.updated_at ?? record.timestamp),
   };
 }
 
@@ -318,5 +339,18 @@ export class BirdeyeClient {
         decimals: toNumber(record.decimals),
       };
     });
+  }
+
+  async getTraderGainersLosers(window: TimeWindow, limit = 100): Promise<BirdeyeTraderGainersLoserRow[]> {
+    const data = await this.request<Record<string, unknown>>(BIRDEYE_ENDPOINTS.traderGainersLosers, {
+      searchParams: { type: window, window, limit },
+    });
+
+    const rows = extractRows(data ?? {});
+
+    return rows
+      .map(inferTraderGainersLoserRow)
+      .filter((row) => row.wallet !== "unknown")
+      .sort((a, b) => (b.pnlUsd ?? Number.NEGATIVE_INFINITY) - (a.pnlUsd ?? Number.NEGATIVE_INFINITY));
   }
 }
