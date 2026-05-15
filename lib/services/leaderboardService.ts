@@ -40,19 +40,24 @@ export class LeaderboardService {
     }
 
     const dedupedCandidates = this.dedupeCandidates(candidates);
-    const analyses = await Promise.allSettled(dedupedCandidates.map((candidate) => this.analyzeCandidate(candidate, window, warnings)));
+    
+    // Serialize wallet analysis to avoid rate limiting. Process candidates one at a time.
+    const successfulAnalyses: CandidateAnalysis[] = [];
+    for (const candidate of dedupedCandidates) {
+      const analysis = await this.analyzeCandidate(candidate, window, warnings);
+      if (analysis !== null) {
+        successfulAnalyses.push(analysis);
+      }
+    }
 
-    const successfulAnalyses = analyses
-      .filter((result): result is PromiseFulfilledResult<CandidateAnalysis | null> => result.status === "fulfilled")
-      .map((result) => result.value)
-      .filter((value): value is CandidateAnalysis => value !== null)
-      .sort((a, b) => {
-        if (b.score !== a.score) {
-          return b.score - a.score;
-        }
+    // Sort by alpha score (descending), then by PNL (descending)
+    successfulAnalyses.sort((a, b) => {
+      if (b.score !== a.score) {
+        return b.score - a.score;
+      }
 
-        return b.sortPnlUsd - a.sortPnlUsd;
-      });
+      return b.sortPnlUsd - a.sortPnlUsd;
+    });
 
     const entries = successfulAnalyses.slice(0, limit).map((analysis, index) => ({
       rank: index + 1,

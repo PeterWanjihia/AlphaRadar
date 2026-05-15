@@ -1,5 +1,7 @@
 import { getEnv } from "@/lib/config/env";
 import { BIRDEYE_ENDPOINTS } from "@/lib/birdeye/endpoints";
+import { getRequestQueue } from "@/lib/cache/requestQueue";
+import { getWalletDataCache } from "@/lib/cache/walletDataCache";
 import type {
   BirdeyeTokenMetadata,
   BirdeyeTraderGainersLoserRow,
@@ -135,6 +137,10 @@ export class BirdeyeClient {
 
   private readonly defaultTimeoutMs = 15_000;
 
+  private readonly requestQueue = getRequestQueue({ concurrency: 2, maxRetries: 3 });
+
+  private readonly cache = getWalletDataCache();
+
   constructor() {
     const env = getEnv();
     this.baseUrl = env.BIRDEYE_BASE_URL.replace(/\/+$/, "");
@@ -145,23 +151,20 @@ export class BirdeyeClient {
   private async request<T>(endpoint: string, options: RequestOptions = {}): Promise<T> {
     const method = options.method ?? "GET";
     const timeoutMs = options.timeoutMs ?? this.defaultTimeoutMs;
-    const retries = options.retries ?? 1;
 
-    const url = new URL(`${this.baseUrl}${endpoint}`);
-    const mergedParams = {
-      ...(options.searchParams ?? {}),
-    };
+    // Use request queue to handle rate limiting and serialize requests
+    return this.requestQueue.enqueue(async () => {
+      const url = new URL(`${this.baseUrl}${endpoint}`);
+      const mergedParams = {
+        ...(options.searchParams ?? {}),
+      };
 
-    for (const [key, value] of Object.entries(mergedParams)) {
-      if (value !== null && value !== undefined && `${value}`.trim().length > 0) {
-        url.searchParams.set(key, String(value));
+      for (const [key, value] of Object.entries(mergedParams)) {
+        if (value !== null && value !== undefined && `${value}`.trim().length > 0) {
+          url.searchParams.set(key, String(value));
+        }
       }
-    }
 
-    let attempt = 0;
-    let lastError: unknown = null;
-
-    while (attempt <= retries) {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), timeoutMs);
       const started = Date.now();
@@ -187,7 +190,6 @@ export class BirdeyeClient {
           endpoint,
           status: response.status,
           durationMs,
-          attempt,
           creditsUsed: response.headers.get("x-credits-used") ?? null,
           creditsRemaining: response.headers.get("x-credits-remaining") ?? null,
         });
@@ -214,37 +216,35 @@ export class BirdeyeClient {
 
         return (payload.data ?? (payload as unknown as T)) as T;
       } catch (error) {
-        lastError = error;
-        if (attempt >= retries) {
-          if (error instanceof BirdeyeClientError) {
-            throw error;
-          }
-
-          const isAbort = error instanceof Error && error.name === "AbortError";
-          throw new BirdeyeClientError(
-            isAbort ? "Birdeye request timed out" : "Birdeye request failed",
-            isAbort ? "TIMEOUT" : "REQUEST_FAILED",
-            undefined,
-            endpoint,
-            error,
-          );
+        if (error instanceof BirdeyeClientError) {
+          throw error;
         }
+
+        const isAbort = error instanceof Error && error.name === "AbortError";
+        throw new BirdeyeClientError(
+          isAbort ? "Birdeye request timed out" : "Birdeye request failed",
+          isAbort ? "TIMEOUT" : "REQUEST_FAILED",
+          undefined,
+          endpoint,
+          error,
+        );
       } finally {
         clearTimeout(timeout);
       }
-
-      attempt += 1;
-    }
-
-    throw new BirdeyeClientError("Unknown Birdeye client error", "UNKNOWN", undefined, endpoint, lastError);
+    });
   }
 
   async getWalletPnlSummary(wallet: string, window: TimeWindow): Promise<BirdeyeWalletPnlSummary> {
-    const data = await this.request<Record<string, unknown>>(BIRDEYE_ENDPOINTS.walletPnlSummary, {
-      searchParams: { wallet, type: window },
-    });
+    return this.cache.getOrCompute(
+      { endpoint: BIRDEYE_ENDPOINTS.walletPnlSummary, wallet, window },
+      async () => {
+        const data = await this.request<Record<string, unknown>>(BIRDEYE_ENDPOINTS.walletPnlSummary, {
+          searchParams: { wallet, type: window },
+        });
 
-    return inferWalletPnlSummary(data ?? {}, wallet, window);
+        return inferWalletPnlSummary(data ?? {}, wallet, window);
+      },
+    );
   }
 
   async getWalletPnlDetails(wallet: string, window: TimeWindow): Promise<BirdeyeWalletPnlDetailRow[]> {
@@ -299,19 +299,24 @@ export class BirdeyeClient {
   }
 
   async getWalletFirstFunded(wallet: string): Promise<BirdeyeWalletFirstFunded> {
-    const data = await this.request<Record<string, unknown>>(BIRDEYE_ENDPOINTS.walletFirstFunded, {
-      searchParams: { wallet },
-    });
+    return this.cache.getOrCompute(
+      { endpoint: BIRDEYE_ENDPOINTS.walletFirstFunded, wallet },
+      async () => {
+        const data = await this.request<Record<string, unknown>>(BIRDEYE_ENDPOINTS.walletFirstFunded, {
+          searchParams: { wallet },
+        });
 
-    const firstFundedAt = toIsoStringOrNull(
-      data.first_funded_at ?? data.firstFundedAt ?? data.timestamp ?? data.time,
+        const firstFundedAt = toIsoStringOrNull(
+          data.first_funded_at ?? data.firstFundedAt ?? data.timestamp ?? data.time,
+        );
+
+        const walletAgeDays = firstFundedAt
+          ? Math.max(0, Math.floor((Date.now() - new Date(firstFundedAt).getTime()) / 86_400_000))
+          : null;
+
+        return { firstFundedAt, walletAgeDays };
+      },
     );
-
-    const walletAgeDays = firstFundedAt
-      ? Math.max(0, Math.floor((Date.now() - new Date(firstFundedAt).getTime()) / 86_400_000))
-      : null;
-
-    return { firstFundedAt, walletAgeDays };
   }
 
   async getTokenMetadata(tokens: string[]): Promise<BirdeyeTokenMetadata[]> {
