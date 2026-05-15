@@ -6,7 +6,6 @@ type AppEnv = {
   BIRDEYE_API_KEY: string;
   BIRDEYE_BASE_URL: string;
   DEFAULT_CHAIN: string;
-  DATABASE_URL?: string;
   ADMIN_REFRESH_SECRET?: string;
   NODE_ENV: string;
   APP_NAME: string;
@@ -28,7 +27,6 @@ export function getEnv(): AppEnv {
     BIRDEYE_API_KEY: process.env.BIRDEYE_API_KEY!,
     BIRDEYE_BASE_URL: process.env.BIRDEYE_BASE_URL!,
     DEFAULT_CHAIN: process.env.DEFAULT_CHAIN!,
-    DATABASE_URL: process.env.DATABASE_URL,
     ADMIN_REFRESH_SECRET: process.env.ADMIN_REFRESH_SECRET,
     NODE_ENV: process.env.NODE_ENV ?? "development",
     APP_NAME: "AlphaTrace",

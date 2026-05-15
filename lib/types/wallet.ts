@@ -18,6 +18,13 @@ export type WalletProfile = {
   firstFunded: BirdeyeWalletFirstFunded | null;
   tokenMetadata: BirdeyeTokenMetadata[];
   generatedAt: string;
+  alphaScore?: {
+    score: number;
+    breakdown: Record<string, number>;
+    confidence: "high" | "medium" | "low";
+    archetype: string;
+    flags: string[];
+  } | null;
 };
 
 export type WalletProfileResult = {

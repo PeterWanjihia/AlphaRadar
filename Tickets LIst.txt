@@ -69,7 +69,6 @@ Variable
 	API base URL
 	DEFAULT_CHAIN
 	likely solana
-	DATABASE_URL
 	later database connection
 	ADMIN_REFRESH_SECRET
 	for protected refresh routes
