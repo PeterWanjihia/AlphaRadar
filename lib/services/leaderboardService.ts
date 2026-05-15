@@ -16,11 +16,12 @@ export class LeaderboardService {
 
   async buildLeaderboard(window: TimeWindow, limit: number): Promise<LeaderboardBuildResult> {
     const warnings: string[] = [];
-    const candidateFetchLimit = Math.min(100, Math.max(limit * 3, limit, 25));
+    const candidateFetchLimit = Math.min(10, Math.max(limit, 1));
 
-    let candidates: LeaderboardCandidate[] = [];
+    const candidates: LeaderboardCandidate[] = [];
     try {
-      candidates = await this.birdeyeClient.getTraderGainersLosers(window, candidateFetchLimit);
+      const batch = await this.birdeyeClient.getTraderGainersLosers(window, candidateFetchLimit, 0);
+      candidates.push(...batch);
     } catch (error) {
       warnings.push(this.toWarning("Trader candidate source unavailable", error));
       return {

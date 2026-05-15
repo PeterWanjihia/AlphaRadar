@@ -19,6 +19,22 @@ type Row = {
   window: string;
 };
 
+type LeaderboardApiEntry = {
+  wallet: string;
+  pnlUsd: number | null;
+  roiPercent: number | null;
+  alphaScore: number | null;
+  confidence: "high" | "medium" | "low" | string | null;
+  walletAgeDays: number | null;
+  archetype: string | null;
+};
+
+type LeaderboardApiSnapshot = {
+  generatedAt?: string;
+  walletCount?: number;
+  entries?: LeaderboardApiEntry[];
+};
+
 const rowsByWindow: Record<string, Row[]> = {
   "24h": [
     { wallet: "7xQ9r...p4xT", pnlUsd: 182000, roiPercent: 418, winRate: 0.81, alphaScore: 94, confidence: "high", walletAgeDays: 612, archetype: "Alpha Hunter", window: "24h" },
@@ -50,11 +66,11 @@ export default function LeaderboardPage() {
   const [window, setWindow] = useState("7d");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [snapshot, setSnapshot] = useState<{ generatedAt?: string; walletCount?: number; entries?: any[] } | null>(null);
+  const [snapshot, setSnapshot] = useState<LeaderboardApiSnapshot | null>(null);
 
   const rows = useMemo(() => {
     if (snapshot && Array.isArray(snapshot.entries) && snapshot.entries.length > 0) {
-      return snapshot.entries.map((e) => ({
+        return snapshot.entries.map((e) => ({
         wallet: e.wallet,
         pnlUsd: e.pnlUsd ?? 0,
         roiPercent: e.roiPercent ?? 0,
@@ -71,13 +87,18 @@ export default function LeaderboardPage() {
 
   useEffect(() => {
     let mounted = true;
-    setLoading(true);
-    setError(null);
-    setSnapshot(null);
 
-    fetch(`/api/leaderboard?window=${encodeURIComponent(window)}&limit=50`)
-      .then(async (res) => {
-        const body = await res.json().catch(() => null);
+    const loadLeaderboard = async () => {
+      setLoading(true);
+      setError(null);
+      setSnapshot(null);
+
+      try {
+        const res = await fetch(`/api/leaderboard?window=${encodeURIComponent(window)}&limit=50`);
+        const body = (await res.json().catch(() => null)) as
+          | { ok?: boolean; data?: LeaderboardApiSnapshot; error?: { message?: string }; message?: string }
+          | null;
+
         if (!res.ok) {
           const msg = body?.error?.message ?? body?.message ?? `Request failed: ${res.status}`;
           throw new Error(msg);
@@ -88,16 +109,21 @@ export default function LeaderboardPage() {
           throw new Error(msg);
         }
 
-        if (!mounted) return;
-        setSnapshot(body.data);
-      })
-      .catch((err: unknown) => {
-        if (!mounted) return;
-        setError(err instanceof Error ? err.message : String(err));
-      })
-      .finally(() => {
-        if (mounted) setLoading(false);
-      });
+        if (mounted) {
+          setSnapshot(body.data);
+        }
+      } catch (err: unknown) {
+        if (mounted) {
+          setError(err instanceof Error ? err.message : String(err));
+        }
+      } finally {
+        if (mounted) {
+          setLoading(false);
+        }
+      }
+    };
+
+    void loadLeaderboard();
 
     return () => {
       mounted = false;
@@ -108,9 +134,9 @@ export default function LeaderboardPage() {
     { label: "Tracked wallets", value: (snapshot?.walletCount ?? rows.length).toString() },
     {
       label: "Median Alpha Score",
-      value: Math.round((snapshot?.entries?.reduce?.((sum: number, r: any) => sum + (r.alphaScore ?? 0), 0) ?? rows.reduce((sum, row) => sum + row.alphaScore, 0)) / (snapshot?.entries?.length ?? rows.length) ).toString(),
+      value: Math.round((snapshot?.entries?.reduce((sum, r) => sum + (r.alphaScore ?? 0), 0) ?? rows.reduce((sum, row) => sum + row.alphaScore, 0)) / (snapshot?.entries?.length ?? rows.length)).toString(),
     },
-    { label: "Best wallet PNL", value: formatPnl(Math.max(...(snapshot?.entries?.map((r: any) => r.pnlUsd ?? 0) ?? rows.map((r) => r.pnlUsd)))) },
+    { label: "Best wallet PNL", value: formatPnl(Math.max(...(snapshot?.entries?.map((r) => r.pnlUsd ?? 0) ?? rows.map((r) => r.pnlUsd)))) },
     { label: "Freshness", value: snapshot?.generatedAt ? `Generated ${new Date(snapshot.generatedAt).toLocaleString()}` : loading ? "Loading..." : error ? "Error" : "Cached snapshot" },
   ];
 

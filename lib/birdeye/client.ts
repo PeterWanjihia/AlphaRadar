@@ -149,7 +149,6 @@ export class BirdeyeClient {
 
     const url = new URL(`${this.baseUrl}${endpoint}`);
     const mergedParams = {
-      chain: this.defaultChain,
       ...(options.searchParams ?? {}),
     };
 
@@ -173,8 +172,8 @@ export class BirdeyeClient {
           headers: {
             "X-API-KEY": this.apiKey,
             accept: "application/json",
-            "content-type": "application/json",
             "x-chain": this.defaultChain,
+            ...(method === "POST" || options.body ? { "content-type": "application/json" } : {}),
           },
           body: options.body ? JSON.stringify(options.body) : undefined,
           signal: controller.signal,
@@ -341,9 +340,12 @@ export class BirdeyeClient {
     });
   }
 
-  async getTraderGainersLosers(window: TimeWindow, limit = 100): Promise<BirdeyeTraderGainersLoserRow[]> {
+  async getTraderGainersLosers(window: TimeWindow, limit = 10, offset = 0): Promise<BirdeyeTraderGainersLoserRow[]> {
+    void window;
+
     const data = await this.request<Record<string, unknown>>(BIRDEYE_ENDPOINTS.traderGainersLosers, {
-      searchParams: { type: window, window, limit },
+      searchParams: { type: "today", sort_by: "PnL", sort_type: "desc", offset, limit },
+      retries: 0,
     });
 
     const rows = extractRows(data ?? {});
